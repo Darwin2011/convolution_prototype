@@ -42,6 +42,31 @@ def winograd_convolution_2d_8x8_ref(kernel, data):
         out[img][c_o] += np.dot(AT, np.dot(UV, AT.T))
   return out
 
+def winograd_convolution_2d_4x4_ref(kernel, data):
+  AT = np.array(
+    [[1, 1, 1, 0],
+     [0, 1, -1, -1]], dtype=np.float)
+  G = np.array(
+    [[1, 0, 0],
+     [0.5, 0.5, 0.5],
+     [0.5, -0.5, 0.5],
+     [0, 0, 1]], dtype=np.float)
+  BT = np.array(
+    [[1, 0, -1, 0],
+     [0, 1, 1, 0],
+     [0, -1, 1, 0],
+     [0, 1, 0, -1]], dtype=np.float)
+  (c_out, c_in, kernel_h, kernel_w) = kernel.shape
+  (b, c_in, data_h, data_w) = data.shape
+  out = np.zeros((b, c_out, data_h - kernel_h + 1, data_w - kernel_w + 1))
+  for img in range(b):
+    for c_o in range(c_out):
+      for c_i in range(c_in):
+        U = np.dot(G, np.dot(kernel[c_o][c_i], G.T))
+        V = np.dot(BT, np.dot(data[img][c_i], BT.T))
+        UV = np.multiply(U, V)
+        out[img][c_o] += np.dot(AT, np.dot(UV, AT.T))
+  return out
 
 def direct_convolution_2d_8x8_ref_v1(kernel, data):
   (c_out, c_in, kernel_h, kernel_w) = kernel.shape
@@ -64,7 +89,29 @@ def direct_convolution_2d_8x8_ref_v1(kernel, data):
                 k = nhwc_kernel[c_o][k_h][k_w][c_i]
                 out[img][c_o][o_h][o_w] += d * k
   return out 
-                
+
+def direct_convolution_2d_8x8_ref_v2(kernel, data):
+  (c_out, c_in, kernel_h, kernel_w) = kernel.shape
+  (b, c_in, data_h, data_w) = data.shape
+  out = np.zeros((b, c_out, data_h - kernel_h + 1, data_w - kernel_w + 1))
+  nchw_kernel = kernel
+  nhwc_kernel = np.moveaxis(kernel, 1, -1)
+  nchw_data = data
+  nhwc_data = np.moveaxis(data, 1, -1)
+  for o_h in range(data_h - kernel_h + 1):
+    for o_w in range(data_w - kernel_w + 1):
+      for k_h in range(kernel_h):
+        for k_w in range(kernel_w):
+          y = o_h + k_h
+          x = o_w + k_w
+          for img in range(b):
+            for c_i in range(c_in):
+              d = nhwc_data[img][y][x][c_i]
+              for c_o in range(c_out):
+                k = nhwc_kernel[c_o][k_h][k_w][c_i]
+                out[img][c_o][o_h][o_w] += d * k
+  return out 
+
 def conv_ref(kernel, data):
   (c_out, c_in, kernel_h, kernel_w) = kernel.shape
   (b, c_in, data_h, data_w) = data.shape
@@ -78,13 +125,19 @@ def conv_ref(kernel, data):
  
 class TestConvolution(unittest.TestCase):
 
-    def test_winograd(self):
+    def test_winograd8x8(self):
       kernel = np.random.rand(4, 4, 3, 3)
       data = np.random.rand(4, 4, 8, 8)
       winograd_out = winograd_convolution_2d_8x8_ref(kernel, data)
       refconv_out = conv_ref(kernel, data)
       self.assertTrue(np.allclose(winograd_out, refconv_out))
 
+    def test_winograd4x4(self):
+      kernel = np.random.rand(4, 4, 3, 3)
+      data = np.random.rand(4, 4, 4, 4)
+      winograd_out = winograd_convolution_2d_4x4_ref(kernel, data)
+      refconv_out = conv_ref(kernel, data)
+      self.assertTrue(np.allclose(winograd_out, refconv_out))
 
     def test_directconv(self):
       kernel = np.random.rand(4, 4, 3, 3)
